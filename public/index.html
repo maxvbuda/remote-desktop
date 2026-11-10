@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Remote Desktop</title>
+  <meta name="description" content="Share your screen or control another computer from any browser.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='2' y='3' width='20' height='14' rx='2' fill='%234f7cff'/><rect x='8' y='19' width='8' height='2' rx='1' fill='%234f7cff'/></svg>">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body data-view="home">
+  <header class="topbar">
+    <a class="brand" href="/">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Remote Desktop
+    </a>
+  </header>
+
+  <!-- Landing -->
+  <main id="home" class="view">
+    <section class="hero">
+      <h1>Reach any computer from a browser</h1>
+      <p>Peer-to-peer screen sharing over WebRTC, with optional mouse and keyboard control. You approve every connection.</p>
+    </section>
+
+    <div class="cards">
+      <section class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 13V7M9 10l3-3 3 3M8 21h8"/></svg>
+        </div>
+        <h2>Share this computer</h2>
+        <p class="muted">Get an ID and PIN to give to the person who will connect.</p>
+        <label class="check"><input type="checkbox" id="share-audio"> Include audio</label>
+        <button id="start-share" class="primary">Start sharing</button>
+      </section>
+
+      <section class="card">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M12 7v6M9 10l3 3 3-3M8 21h8"/></svg>
+        </div>
+        <h2>Connect to a computer</h2>
+        <form id="connect-form" autocomplete="off">
+          <label>Computer ID
+            <input id="join-room" inputmode="numeric" placeholder="123 456 789" required>
+          </label>
+          <label>PIN
+            <input id="join-pin" placeholder="ABC234" autocapitalize="characters" spellcheck="false" required>
+          </label>
+          <button class="primary" type="submit">Connect</button>
+        </form>
+      </section>
+    </div>
+
+    <p class="error" id="home-error" role="alert" hidden></p>
+  </main>
+
+  <!-- Host -->
+  <main id="host-view" class="view" hidden>
+    <div class="host-grid">
+      <section class="card creds">
+        <div class="status-line"><span class="dot" id="host-dot"></span><span id="host-status">Connecting…</span></div>
+        <div class="cred">
+          <span class="label">Computer ID</span>
+          <strong id="host-room" class="mono"></strong>
+          <button class="icon-btn" data-copy="room" title="Copy ID">Copy</button>
+        </div>
+        <div class="cred">
+          <span class="label">PIN</span>
+          <strong id="host-pin" class="mono"></strong>
+          <button class="icon-btn" data-copy="pin" title="Copy PIN">Copy</button>
+        </div>
+        <p class="error" id="locked-note" hidden>Someone entered the wrong PIN too many times, so new connections are blocked. Click “New ID &amp; PIN” to continue.</p>
+        <div class="actions">
+          <button id="copy-link">Copy invite link</button>
+          <button id="reset-creds">New ID &amp; PIN</button>
+          <button id="stop-share" class="danger">Stop sharing</button>
+        </div>
+      </section>
+
+      <section class="card preview">
+        <video id="host-preview" muted autoplay playsinline></video>
+        <p class="note" id="surface-note" hidden>You're sharing a window or tab. Remote control maps clicks to your whole screen, so share your <b>entire screen</b> if you want control to line up.</p>
+      </section>
+
+      <section class="card">
+        <h3>Viewers</h3>
+        <ul id="viewer-list" class="viewer-list"></ul>
+        <p class="muted" id="viewer-empty">No one is connected. Share the ID and PIN to let someone in.</p>
+      </section>
+
+      <section class="card">
+        <h3>Remote control</h3>
+        <label class="switch">
+          <input type="checkbox" id="allow-control">
+          <span class="track"></span>
+          Allow viewers to control this computer
+        </label>
+        <div class="status-line"><span class="dot" id="agent-dot"></span><span id="agent-status">Control agent not running</span></div>
+        <details id="agent-help">
+          <summary>Set up the control agent</summary>
+          <p class="muted">Browsers can't move your mouse or press keys, so a small helper program does it. It only acts while the switch above is on.</p>
+          <ol class="steps">
+            <li><a href="/agent.py" download>Download agent.py</a> (requires Python 3.9+)</li>
+            <li>Install its dependencies:
+              <div class="code"><code>pip3 install websockets pynput</code><button class="icon-btn" data-copy-code>Copy</button></div>
+            </li>
+            <li>Run it on this computer:
+              <div class="code"><code id="agent-cmd"></code><button class="icon-btn" data-copy-code>Copy</button></div>
+            </li>
+          </ol>
+          <p class="muted small">macOS: allow your terminal app under System Settings → Privacy &amp; Security → Accessibility.</p>
+        </details>
+      </section>
+    </div>
+  </main>
+
+  <!-- Viewer -->
+  <main id="viewer-view" class="view" hidden>
+    <div class="toolbar">
+      <span class="mono" id="viewer-title"></span>
+      <span class="badge" id="control-badge">View only</span>
+      <span class="stats mono" id="viewer-stats"></span>
+      <span class="spacer"></span>
+      <button id="btn-text" title="Type text on the remote computer">Send text</button>
+      <button id="btn-sound" title="Toggle sound" hidden>Unmute</button>
+      <button id="btn-scale" title="Toggle between fit-to-window and actual size">Actual size</button>
+      <button id="btn-fullscreen" title="Fullscreen">Fullscreen</button>
+      <button id="btn-disconnect" class="danger">Disconnect</button>
+    </div>
+    <form id="text-pop" class="text-pop" hidden>
+      <textarea id="text-input" rows="3" placeholder="Text to type on the remote computer"></textarea>
+      <div class="actions"><button type="button" id="text-cancel">Cancel</button><button class="primary" type="submit">Type it</button></div>
+    </form>
+    <div id="stage" tabindex="0">
+      <video id="remote-video" autoplay playsinline muted></video>
+      <div id="overlay">
+        <div class="spinner" id="overlay-spinner"></div>
+        <p id="overlay-text">Connecting…</p>
+        <button id="overlay-back" class="primary" hidden>Back</button>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast" role="status"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
