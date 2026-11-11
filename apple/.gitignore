@@ -1,0 +1,5 @@
+RemoteDesktop.xcodeproj/
+build/
+*.xcuserstate
+macOS/Info.plist
+iOS/Info.plist

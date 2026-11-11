@@ -61,12 +61,12 @@ async function getIceServers(env) {
 }
 
 /**
- * One Room per computer ID. It relays WebRTC signaling between the host
- * (the shared computer's browser tab) and viewers, and forwards input events
- * from approved viewers to the host's control agent while control is allowed.
+ * One Room per computer ID. It relays WebRTC signaling between the host (the
+ * shared Mac) and viewers, and only lets viewers the host accepted through.
+ * Mouse and keyboard input travels peer-to-peer over a WebRTC data channel.
  *
- * Sockets are tagged by role ("host" | "viewer" | "agent") and carry their
- * state in WebSocket attachments, so the object can hibernate between messages.
+ * Sockets are tagged by role ("host" | "viewer") and carry their state in
+ * WebSocket attachments, so the object can hibernate between messages.
  */
 export class Room extends DurableObject {
   constructor(ctx, env) {
@@ -80,8 +80,8 @@ export class Room extends DurableObject {
     const pin = (url.searchParams.get('pin') || '').toUpperCase();
     const [client, server] = Object.values(new WebSocketPair());
 
-    // Browsers can't read HTTP error statuses on a WebSocket upgrade, so
-    // denials are delivered as a message over a short-lived socket.
+    // Denials are delivered as a message over a short-lived socket so clients
+    // can show the reason.
     const denial = await this.admit(role, pin);
     if (denial) {
       server.accept();
@@ -96,8 +96,11 @@ export class Room extends DurableObject {
     if (role === 'host') {
       attachment.pin = pin;
       attachment.control = false;
-      // Same ID + PIN from a reloaded tab: the newer session takes over.
-      for (const old of this.sockets('host')) this.drop(old, 4000, 'Replaced by a newer session');
+      // Same ID + PIN from another window: the newer session takes over.
+      for (const old of this.sockets('host')) {
+        this.send(old, { type: 'replaced' });
+        this.drop(old, 4000, 'Replaced by a newer session');
+      }
       for (const viewer of this.sockets('viewer')) {
         this.send(viewer, { type: 'host-left' });
         this.drop(viewer, 4002, 'Host reconnected');
@@ -116,23 +119,16 @@ export class Room extends DurableObject {
     this.ctx.acceptWebSocket(server, [role]);
     server.serializeAttachment(attachment);
 
-    const host = this.host();
-    if (role === 'host') {
-      this.send(server, { type: 'hello', id, agent: this.sockets('agent').length > 0 });
-    } else if (role === 'viewer') {
-      this.send(server, { type: 'hello', id });
-      this.send(host.ws, { type: 'viewer-joined', id, info: attachment.info });
-    } else {
-      this.send(server, { type: 'hello', id });
-      this.send(host.ws, { type: 'agent', connected: true });
-      this.broadcastStatus();
+    this.send(server, { type: 'hello', id });
+    if (role === 'viewer') {
+      this.send(this.host().ws, { type: 'viewer-joined', id, info: attachment.info });
     }
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
   async admit(role, pin) {
-    if (!['host', 'viewer', 'agent'].includes(role)) {
+    if (!['host', 'viewer'].includes(role)) {
       return { code: 'bad-request', message: 'Unknown role.' };
     }
     if (!/^[A-Z0-9]{4,32}$/.test(pin)) {
@@ -177,7 +173,7 @@ export class Room extends DurableObject {
     }
     const att = ws.deserializeAttachment();
     if (att.role === 'host') this.fromHost(ws, att, msg);
-    else if (att.role === 'viewer') this.fromViewer(att, msg, raw);
+    else if (att.role === 'viewer') this.fromViewer(att, msg);
   }
 
   fromHost(ws, att, msg) {
@@ -208,15 +204,10 @@ export class Room extends DurableObject {
     }
   }
 
-  fromViewer(att, msg, raw) {
-    if (!att.approved) return;
+  fromViewer(att, msg) {
+    if (!att.approved || msg.type !== 'signal') return;
     const host = this.host();
-    if (!host) return;
-    if (msg.type === 'signal') {
-      this.send(host.ws, { type: 'signal', from: att.id, data: msg.data });
-    } else if (msg.type === 'input' && host.att.control) {
-      for (const agent of this.sockets('agent')) this.send(agent, raw);
-    }
+    if (host) this.send(host.ws, { type: 'signal', from: att.id, data: msg.data });
   }
 
   async webSocketClose(ws) {
@@ -235,7 +226,7 @@ export class Room extends DurableObject {
     if (att.role === 'host') {
       // A replaced host closing must not tear down its successor's room.
       if (this.sockets('host').length > 0) return;
-      for (const other of [...this.sockets('viewer'), ...this.sockets('agent')]) {
+      for (const other of this.sockets('viewer')) {
         this.send(other, { type: 'host-left' });
         this.drop(other, 4002, 'Host disconnected');
       }
@@ -243,12 +234,7 @@ export class Room extends DurableObject {
     }
 
     const host = this.host();
-    if (att.role === 'viewer') {
-      if (host) this.send(host.ws, { type: 'viewer-left', id: att.id });
-    } else if (att.role === 'agent') {
-      if (host) this.send(host.ws, { type: 'agent', connected: this.sockets('agent').length > 0 });
-      this.broadcastStatus();
-    }
+    if (att.role === 'viewer' && host) this.send(host.ws, { type: 'viewer-left', id: att.id });
   }
 
   sockets(role) {
@@ -269,11 +255,7 @@ export class Room extends DurableObject {
   }
 
   status(hostAtt) {
-    return {
-      type: 'status',
-      control: Boolean(hostAtt?.control),
-      agent: this.sockets('agent').length > 0,
-    };
+    return { type: 'status', control: Boolean(hostAtt?.control) };
   }
 
   broadcastStatus() {
