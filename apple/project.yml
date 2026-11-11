@@ -33,6 +33,7 @@ targets:
       properties:
         CFBundleDisplayName: Remote Desktop
         LSApplicationCategoryType: public.app-category.utilities
+        NSLocalNetworkUsageDescription: Remote Desktop connects directly to computers on your network for faster, smoother sessions.
         RDServerURL: $(RD_SERVER_URL)
     settings:
       base:
@@ -56,6 +57,7 @@ targets:
       properties:
         CFBundleDisplayName: Remote Desktop
         UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: Remote Desktop connects directly to computers on your network for faster, smoother sessions.
         UISupportedInterfaceOrientations:
           [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad:

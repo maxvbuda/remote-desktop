@@ -121,7 +121,7 @@ extension ViewerSession: RTCPeerConnectionDelegate {
             switch newState {
             case .connected: self.phase = .live
             case .disconnected: self.phase = .interrupted
-            case .failed: self.end("Couldn't connect directly. Ask the owner to set up a TURN server (see the README).")
+            case .failed: self.end("Couldn't connect the two devices. Their networks block direct connections. Try again on the same Wi-Fi, or set up a TURN relay on the server (see the README).")
             default: break
             }
         }
