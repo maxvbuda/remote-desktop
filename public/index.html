@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Remote Desktop</title>
   <meta name="description" content="Share your Mac's screen or control it from another Mac, iPhone or iPad.">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect x='2' y='3' width='20' height='14' rx='2' fill='%234f7cff'/><rect x='8' y='19' width='8' height='2' rx='1' fill='%234f7cff'/></svg>">
+  <link rel="icon" href="/icon.png">
+  <link rel="apple-touch-icon" href="/icon.png">
   <style>
     :root {
       --bg: #0d1117; --surface: #161b22; --surface-2: #1f2630; --border: #2a313c;
@@ -26,6 +27,7 @@
     .brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; color: var(--text); text-decoration: none; }
     .brand svg, .icon svg { width: 22px; height: 22px; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
     header { max-width: 920px; margin: 0 auto; padding: 16px; }
+    .app-icon { display: block; width: 112px; height: 112px; margin: 0 0 18px -8px; }
     h1 { font-size: clamp(30px, 6vw, 46px); letter-spacing: -0.025em; line-height: 1.1; margin: 0 0 14px; }
     .lead { color: var(--muted); font-size: 18px; max-width: 600px; margin: 0 0 28px; }
     .download { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: var(--accent-text); text-decoration: none; font-weight: 600; padding: 13px 22px; border-radius: 10px; font-size: 17px; }
@@ -48,12 +50,13 @@
 <body>
   <header>
     <a class="brand" href="/">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      <img src="/icon.png" alt="" width="28" height="28">
       Remote Desktop
     </a>
   </header>
 
   <main>
+    <img class="app-icon" src="/icon.png" alt="" width="112" height="112">
     <h1>Reach your Mac from anywhere</h1>
     <p class="lead">Share your screen or take full control of another Mac. Connections go directly between devices, and you approve every one.</p>
 
