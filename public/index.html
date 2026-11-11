@@ -95,20 +95,26 @@
           <span class="track"></span>
           Allow viewers to control this computer
         </label>
-        <div class="status-line"><span class="dot" id="agent-dot"></span><span id="agent-status">Control agent not running</span></div>
+        <div class="status-line"><span class="dot" id="agent-dot"></span><span id="agent-status">Helper app not running</span></div>
         <details id="agent-help">
-          <summary>Set up the control agent</summary>
-          <p class="muted">Browsers can't move your mouse or press keys, so a small helper program does it. It only acts while the switch above is on.</p>
+          <summary>Set up the helper app</summary>
+          <p class="muted">Websites can't move your mouse or press keys, so a small helper app does it. It only acts while the switch above is on.</p>
           <ol class="steps">
-            <li><a href="/agent.py" download>Download agent.py</a> (requires Python 3.9+)</li>
-            <li>Install its dependencies:
-              <div class="code"><code>pip3 install websockets pynput</code><button class="icon-btn" data-copy-code>Copy</button></div>
+            <li>
+              <a class="button primary" id="helper-download" href="#">Download the helper</a>
+              <span class="small muted" id="helper-other">Other systems:
+                <a data-helper="windows" href="#">Windows</a> ·
+                <a data-helper="mac-apple-silicon" href="#">Mac (Apple chip)</a> ·
+                <a data-helper="mac-intel" href="#">Mac (Intel)</a> ·
+                <a data-helper="linux" href="#">Linux</a>
+              </span>
             </li>
-            <li>Run it on this computer:
-              <div class="code"><code id="agent-cmd"></code><button class="icon-btn" data-copy-code>Copy</button></div>
+            <li>
+              <button id="copy-helper-code">Copy helper code</button>
+              <span class="small muted">then open the helper. It reads the code automatically and connects.</span>
             </li>
           </ol>
-          <p class="muted small">macOS: allow your terminal app under System Settings → Privacy &amp; Security → Accessibility.</p>
+          <div class="first-run small muted" id="helper-firstrun"></div>
         </details>
       </section>
     </div>

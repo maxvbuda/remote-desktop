@@ -262,14 +262,13 @@ function renderCreds() {
   const { room, pin } = host.creds;
   $('#host-room').textContent = formatRoom(room);
   $('#host-pin').textContent = pin;
-  $('#agent-cmd').textContent = `python3 agent.py ${location.origin} ${room} ${pin}`;
 }
 
 function renderAgent() {
   const control = $('#allow-control').checked;
   $('#agent-status').textContent = host.agent
-    ? control ? 'Agent connected — viewers can control this computer' : 'Agent connected — control is off'
-    : 'Control agent not running';
+    ? control ? 'Helper connected — viewers can control this computer' : 'Helper connected — control is off'
+    : 'Helper app not running';
   $('#agent-dot').className = 'dot ' + (host.agent ? (control ? 'ok' : 'warn') : '');
   if (control && !host.agent) $('#agent-help').open = true;
 }
@@ -321,6 +320,7 @@ $('#reset-creds').onclick = () => {
   connectHost();
   toast('New ID and PIN created');
 };
+$('#copy-helper-code').onclick = () => copy(helperCode());
 $('#copy-link').onclick = () => copy(`${location.origin}/#join=${host.creds.room}`);
 $('#allow-control').onchange = (e) => {
   host.signal?.send({ type: 'control', enabled: e.target.checked });
@@ -332,6 +332,64 @@ document.addEventListener('click', (e) => {
   if (btn.dataset.copy) copy(host.creds[btn.dataset.copy]);
   else copy(btn.parentElement.querySelector('code').textContent);
 });
+
+// ---- Helper app downloads ----
+// Built by .github/workflows/helper.yml and attached to the latest GitHub release.
+const HELPER_RELEASES = 'https://github.com/maxvbuda/remote-desktop/releases/latest/download';
+const HELPER_FILES = {
+  windows: 'RemoteDesktopHelper-windows.exe',
+  'mac-apple-silicon': 'RemoteDesktopHelper-mac-apple-silicon.zip',
+  'mac-intel': 'RemoteDesktopHelper-mac-intel.zip',
+  linux: 'RemoteDesktopHelper-linux',
+};
+const FIRST_RUN = {
+  windows: [
+    'If Windows says “Windows protected your PC”, click <b>More info</b> → <b>Run anyway</b>.',
+  ],
+  mac: [
+    'Open the downloaded zip, then drag <b>RemoteDesktopHelper</b> into Applications.',
+    'The first time, macOS may block it: open System Settings → Privacy &amp; Security and click <b>Open Anyway</b>.',
+    'When asked, allow it under <b>Accessibility</b>. The helper window shows a button that takes you there.',
+  ],
+  linux: [
+    'Make it runnable (right-click → Properties → Allow executing), then double-click it. Requires an X11 session.',
+  ],
+};
+
+// The helper code bundles this site's address, the ID and the PIN.
+function helperCode() {
+  const site = location.protocol === 'https:' ? location.host : location.origin;
+  return `${site}/${host.creds.room}/${host.creds.pin}`;
+}
+
+async function detectPlatform() {
+  const ua = navigator.userAgent;
+  if (/Windows/.test(ua)) return 'windows';
+  if (/Mac/.test(ua)) {
+    try {
+      const { architecture } = await navigator.userAgentData.getHighEntropyValues(['architecture']);
+      if (architecture === 'x86') return 'mac-intel';
+    } catch {}
+    return 'mac-apple-silicon';
+  }
+  if (/Linux|X11/.test(ua) && !/Android/.test(ua)) return 'linux';
+  return null;
+}
+
+(async () => {
+  for (const a of document.querySelectorAll('[data-helper]')) a.href = `${HELPER_RELEASES}/${HELPER_FILES[a.dataset.helper]}`;
+  const platform = await detectPlatform();
+  const btn = $('#helper-download');
+  if (platform) {
+    btn.href = `${HELPER_RELEASES}/${HELPER_FILES[platform]}`;
+    btn.textContent = `Download for ${{ windows: 'Windows', 'mac-apple-silicon': 'Mac', 'mac-intel': 'Mac (Intel)', linux: 'Linux' }[platform]}`;
+  } else {
+    btn.hidden = true;
+  }
+  const notes = FIRST_RUN[platform?.startsWith('mac') ? 'mac' : platform] || [];
+  $('#helper-firstrun').innerHTML = notes.map((n) => `<p>${n}</p>`).join('');
+  $('#helper-firstrun').hidden = notes.length === 0;
+})();
 
 // ---------- Viewer ----------
 const viewer = { signal: null, pc: null, ended: true, message: null, status: { control: false, agent: false }, statsTimer: null };
