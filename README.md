@@ -24,7 +24,16 @@ and re-run the **Build apps** workflow. Users can also set the address themselve
 
 ### TURN (recommended)
 
-STUN alone fails on some corporate and mobile networks. Create a TURN key in the Cloudflare dashboard (Realtime → TURN), then:
+STUN alone fails on some corporate and mobile networks, so a relay helps. Use either option.
+
+**Any TURN provider.** Some, such as Metered or ExpressTURN, have free plans without a card. Paste the ICE servers they give you as a JSON array:
+
+```sh
+npx wrangler secret put TURN_SERVERS
+# [{"urls":["turn:example.com:443?transport=tcp"],"username":"…","credential":"…"}]
+```
+
+**Cloudflare Realtime TURN.** Requires a payment method on the account. Create a key under Realtime → TURN Server, then:
 
 ```sh
 npx wrangler secret put TURN_KEY_ID

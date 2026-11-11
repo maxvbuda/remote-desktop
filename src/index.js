@@ -29,10 +29,18 @@ export default {
   },
 };
 
-// STUN always works for simple networks. Set TURN_KEY_ID / TURN_KEY_API_TOKEN
-// (Cloudflare Realtime TURN) to relay through strict NATs and firewalls.
+// STUN always works for simple networks. To relay through strict NATs and
+// firewalls, either set TURN_SERVERS to a JSON array of ICE servers from any
+// TURN provider, or set TURN_KEY_ID / TURN_KEY_API_TOKEN for Cloudflare Realtime.
 async function getIceServers(env) {
   const fallback = [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }];
+  if (env.TURN_SERVERS) {
+    try {
+      return [...fallback, ...[].concat(JSON.parse(env.TURN_SERVERS))];
+    } catch (err) {
+      console.error('TURN_SERVERS is not valid JSON', err);
+    }
+  }
   if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return fallback;
 
   try {
