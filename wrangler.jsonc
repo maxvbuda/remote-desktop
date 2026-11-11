@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "remote-desktop",
+  "account_id": "d84b38cfd7542f2f092b8fc0a8f146ad",
   "main": "src/index.js",
   "compatibility_date": "2025-10-01",
   "assets": {
