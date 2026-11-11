@@ -5,13 +5,16 @@ import WebRTC
 /// the "input" data channel the host opens.
 final class ViewerSession: NSObject, ObservableObject, Identifiable {
     enum Phase: Equatable {
-        case connecting, waiting, starting, live, interrupted
+        case connecting, waiting, starting, relaying, live, interrupted
         case ended(String)
     }
 
     @Published private(set) var phase: Phase = .connecting
     @Published private(set) var controlAllowed = false
     @Published private(set) var videoTrack: RTCVideoTrack?
+    /// Set when the devices couldn't connect directly and video comes through the server.
+    @Published private(set) var relay: RelayPlayer?
+    @Published private(set) var relaySize: CGSize = .zero
 
     let room: String
     private let pin: String
@@ -22,8 +25,14 @@ final class ViewerSession: NSObject, ObservableObject, Identifiable {
     private var endMessage: String?
     private var pendingCandidates: [RTCIceCandidate] = []
     private var hasRemoteDescription = false
+    private var directTimeout: Timer?
 
-    var canControl: Bool { controlAllowed && phase == .live && channel?.readyState == .open }
+    /// How long to try a direct connection before switching to the relay.
+    private static let directTimeoutSeconds = 12.0
+
+    var canControl: Bool {
+        controlAllowed && phase == .live && (relay != nil || channel?.readyState == .open)
+    }
 
     init(room: String, pin: String, server: URL) {
         self.room = room
@@ -32,6 +41,10 @@ final class ViewerSession: NSObject, ObservableObject, Identifiable {
         super.init()
         let signal = SignalingClient(server: server, room: room, query: ["role": "viewer", "pin": pin])
         signal.onMessage = { [weak self] in self?.handle($0) }
+        signal.onData = { [weak self] data in
+            guard let self, let relay = self.relay else { return }
+            if relay.handle(data), self.phase != .live { self.phase = .live }
+        }
         signal.onClose = { [weak self] in
             guard let self else { return }
             self.end(self.endMessage ?? "Lost the connection to the server.")
@@ -42,8 +55,28 @@ final class ViewerSession: NSObject, ObservableObject, Identifiable {
     func disconnect() { end("Disconnected.") }
 
     func send(_ event: [String: Any]) {
-        guard canControl, let buffer = RTC.encode(event) else { return }
-        channel?.sendData(buffer)
+        guard canControl else { return }
+        if relay != nil {
+            signal?.send(["type": "input", "ev": event])
+        } else if let buffer = RTC.encode(event) {
+            channel?.sendData(buffer)
+        }
+    }
+
+    /// Falls back to streaming through the Worker when a direct connection isn't possible.
+    private func startRelay() {
+        guard relay == nil, !isEnded, let signal else { return }
+        directTimeout?.invalidate()
+        channel?.close()
+        channel = nil
+        pc?.close()
+        pc = nil
+        videoTrack = nil
+        let player = RelayPlayer()
+        player.onSize = { [weak self] in self?.relaySize = $0 }
+        relay = player
+        phase = .relaying
+        signal.send(["type": "relay-request"])
     }
 
     var statusText: String {
@@ -51,6 +84,7 @@ final class ViewerSession: NSObject, ObservableObject, Identifiable {
         case .connecting: return "Connecting…"
         case .waiting: return "Waiting for the other computer to accept…"
         case .starting: return "Starting the stream…"
+        case .relaying: return "A direct connection isn't possible on these networks. Switching to relay…"
         case .live: return ""
         case .interrupted: return "Connection interrupted, trying to recover…"
         case .ended(let message): return message
@@ -61,7 +95,12 @@ final class ViewerSession: NSObject, ObservableObject, Identifiable {
         switch msg["type"] as? String {
         case "error": endMessage = msg["message"] as? String
         case "hello": phase = .waiting
-        case "accepted": phase = .starting
+        case "accepted":
+            phase = .starting
+            directTimeout = Timer.scheduledTimer(withTimeInterval: Self.directTimeoutSeconds, repeats: false) { [weak self] _ in
+                guard let self, self.phase != .live else { return }
+                self.startRelay()
+            }
         case "rejected": endMessage = "The other computer ended the connection."
         case "host-left": endMessage = "The other computer stopped sharing."
         case "status": controlAllowed = (msg["control"] as? Bool) ?? false
@@ -98,6 +137,7 @@ final class ViewerSession: NSObject, ObservableObject, Identifiable {
 
     private func end(_ message: String) {
         guard !isEnded else { return }
+        directTimeout?.invalidate()
         signal?.close()
         signal = nil
         channel?.close()
@@ -105,6 +145,7 @@ final class ViewerSession: NSObject, ObservableObject, Identifiable {
         pc?.close()
         pc = nil
         videoTrack = nil
+        relay = nil
         phase = .ended(message)
     }
 }
@@ -117,11 +158,13 @@ extension ViewerSession: RTCPeerConnectionDelegate {
 
     func peerConnection(_ pc: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         DispatchQueue.main.async {
-            guard !self.isEnded else { return }
+            guard !self.isEnded, self.relay == nil, pc === self.pc else { return }
             switch newState {
-            case .connected: self.phase = .live
+            case .connected:
+                self.directTimeout?.invalidate()
+                self.phase = .live
             case .disconnected: self.phase = .interrupted
-            case .failed: self.end("Couldn't connect the two devices. Their networks block direct connections. Try again on the same Wi-Fi, or set up a TURN relay on the server (see the README).")
+            case .failed: self.startRelay()
             default: break
             }
         }

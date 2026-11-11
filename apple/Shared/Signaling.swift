@@ -4,7 +4,10 @@ import Foundation
 /// Callbacks are delivered on the main queue.
 final class SignalingClient: NSObject, URLSessionWebSocketDelegate {
     var onMessage: (([String: Any]) -> Void)?
+    var onData: ((Data) -> Void)?
     var onClose: (() -> Void)?
+    /// Binary sends not yet acknowledged; used to drop video when the network can't keep up.
+    private(set) var pendingBinarySends = 0
 
     private var session: URLSession!
     private var task: URLSessionWebSocketTask?
@@ -31,6 +34,13 @@ final class SignalingClient: NSObject, URLSessionWebSocketDelegate {
         task?.send(.string(text)) { _ in }
     }
 
+    func send(_ data: Data) {
+        pendingBinarySends += 1
+        task?.send(.data(data)) { [weak self] _ in
+            DispatchQueue.main.async { self?.pendingBinarySends -= 1 }
+        }
+    }
+
     /// Closes without calling onClose.
     func close() {
         guard !finished else { return }
@@ -51,6 +61,9 @@ final class SignalingClient: NSObject, URLSessionWebSocketDelegate {
                        let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
                         self.onMessage?(obj)
                     }
+                    self.receive()
+                case .success(.data(let data)):
+                    self.onData?(data)
                     self.receive()
                 case .success:
                     self.receive()

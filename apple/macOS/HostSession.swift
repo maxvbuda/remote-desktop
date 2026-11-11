@@ -7,7 +7,7 @@ import WebRTC
 /// "Allow control" is on.
 final class HostSession: NSObject, ObservableObject {
     struct Viewer: Identifiable {
-        enum State { case pending, connecting, connected, failed }
+        enum State { case pending, connecting, connected, relayed, failed }
         let id: String
         let place: String
         let ip: String
@@ -42,6 +42,11 @@ final class HostSession: NSObject, ObservableObject {
     private var retryTimer: Timer?
     private var trustTimer: Timer?
     private var fatalCode: String?
+    private let relayEncoder = RelayEncoder()
+    /// Viewers receiving video through the Worker because a direct connection failed.
+    private var relayViewers = Set<String>() {
+        didSet { capturer.onFrame = relayViewers.isEmpty ? nil : { [weak self] in self?.relayEncoder.encode($0) } }
+    }
 
     override init() {
         let defaults = UserDefaults.standard
@@ -53,6 +58,9 @@ final class HostSession: NSObject, ObservableObject {
         }
         super.init()
         capturer.onStop = { [weak self] _ in self?.stop() }
+        relayEncoder.onPacket = { [weak self] packet, isKey in
+            DispatchQueue.main.async { self?.sendRelayPacket(packet, isKey: isKey) }
+        }
         trustTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
             guard let self else { return }
             let trusted = InputInjector.isTrusted
@@ -177,6 +185,16 @@ final class HostSession: NSObject, ObservableObject {
         case "signal":
             guard let from = msg["from"] as? String, let data = msg["data"] as? [String: Any] else { return }
             peers[from]?.handleSignal(data)
+        case "relay-request":
+            guard let from = msg["from"] as? String, let peer = peers[from] else { return }
+            peer.close()
+            relayViewers.insert(from)
+            relayEncoder.requestKeyFrame()
+            setState(from, .relayed)
+        case "input":
+            guard let from = msg["from"] as? String, relayViewers.contains(from),
+                  allowControl, accessibilityTrusted, let event = msg["ev"] as? [String: Any] else { return }
+            injector.handle(event)
         default:
             break
         }
@@ -204,7 +222,18 @@ final class HostSession: NSObject, ObservableObject {
         removePeer(id)
     }
 
+    private func sendRelayPacket(_ packet: Data, isKey: Bool) {
+        guard let signal, !relayViewers.isEmpty else { return }
+        // Drop frames rather than fall behind; the next keyframe catches viewers up.
+        if signal.pendingBinarySends > 6 {
+            if isKey { relayEncoder.requestKeyFrame() }
+            return
+        }
+        signal.send(packet)
+    }
+
     private func removePeer(_ id: String) {
+        relayViewers.remove(id)
         peers.removeValue(forKey: id)?.close()
         viewers.removeAll { $0.id == id }
         if peers.isEmpty { injector.releaseAll() }
@@ -213,12 +242,15 @@ final class HostSession: NSObject, ObservableObject {
     private func closeAllPeers() {
         for peer in peers.values { peer.close() }
         peers.removeAll()
+        relayViewers.removeAll()
+        relayEncoder.stop()
         viewers.removeAll()
         injector.releaseAll()
     }
 
     private func setState(_ id: String, _ state: Viewer.State) {
         guard let i = viewers.firstIndex(where: { $0.id == id }) else { return }
+        if viewers[i].state == .relayed && state != .relayed { return }  // the closed direct connection reporting in
         viewers[i].state = state
     }
 }

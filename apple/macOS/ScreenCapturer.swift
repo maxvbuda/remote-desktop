@@ -10,6 +10,8 @@ final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelegate {
     }
 
     var onStop: ((Error) -> Void)?
+    /// Every frame sent to WebRTC, on the capture queue. Feeds relay mode.
+    var onFrame: ((CVPixelBuffer) -> Void)?
 
     private var stream: SCStream?
     private var source: RTCVideoSource?
@@ -96,5 +98,6 @@ final class ScreenCapturer: NSObject, SCStreamOutput, SCStreamDelegate {
         let timestamp = Int64(CACurrentMediaTime() * 1_000_000_000)
         let frame = RTCVideoFrame(buffer: RTCCVPixelBuffer(pixelBuffer: buffer), rotation: ._0, timeStampNs: timestamp)
         source.capturer(capturer, didCapture: frame)
+        onFrame?(buffer)
     }
 }

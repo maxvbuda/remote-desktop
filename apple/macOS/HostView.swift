@@ -146,6 +146,7 @@ struct HostView: View {
         case .pending: return "Wants to connect"
         case .connecting: return "Connecting…"
         case .connected: return "Watching"
+        case .relayed: return "Watching (relayed)"
         case .failed: return "Connection failed"
         }
     }

@@ -71,7 +71,9 @@ async function getIceServers(env) {
 /**
  * One Room per computer ID. It relays WebRTC signaling between the host (the
  * shared Mac) and viewers, and only lets viewers the host accepted through.
- * Mouse and keyboard input travels peer-to-peer over a WebRTC data channel.
+ * Video and input normally travel peer-to-peer over WebRTC. When the devices
+ * can't reach each other, the viewer asks for relay mode and the host streams
+ * H.264 through this object as binary messages instead.
  *
  * Sockets are tagged by role ("host" | "viewer") and carry their state in
  * WebSocket attachments, so the object can hibernate between messages.
@@ -172,16 +174,26 @@ export class Room extends DurableObject {
   }
 
   async webSocketMessage(ws, raw) {
-    if (typeof raw !== 'string' || raw.length > 64 * 1024) return;
+    const att = ws.deserializeAttachment();
+    // Binary messages are relayed video from the host (used when the devices
+    // can't connect directly): forward them to viewers that asked for relay.
+    if (typeof raw !== 'string') {
+      if (att.role !== 'host') return;
+      for (const viewer of this.sockets('viewer')) {
+        const v = viewer.deserializeAttachment();
+        if (v.approved && v.relay) this.send(viewer, raw);
+      }
+      return;
+    }
+    if (raw.length > 64 * 1024) return;
     let msg;
     try {
       msg = JSON.parse(raw);
     } catch {
       return;
     }
-    const att = ws.deserializeAttachment();
     if (att.role === 'host') this.fromHost(ws, att, msg);
-    else if (att.role === 'viewer') this.fromViewer(att, msg);
+    else if (att.role === 'viewer') this.fromViewer(ws, att, msg);
   }
 
   fromHost(ws, att, msg) {
@@ -212,10 +224,24 @@ export class Room extends DurableObject {
     }
   }
 
-  fromViewer(att, msg) {
-    if (!att.approved || msg.type !== 'signal') return;
+  fromViewer(ws, att, msg) {
+    if (!att.approved) return;
     const host = this.host();
-    if (host) this.send(host.ws, { type: 'signal', from: att.id, data: msg.data });
+    if (!host) return;
+    switch (msg.type) {
+      case 'signal':
+        this.send(host.ws, { type: 'signal', from: att.id, data: msg.data });
+        break;
+      case 'relay-request':
+        att.relay = true;
+        ws.serializeAttachment(att);
+        this.send(host.ws, { type: 'relay-request', from: att.id });
+        break;
+      case 'input':
+        // Relay mode only; direct connections send input over WebRTC.
+        if (att.relay && host.att.control) this.send(host.ws, { type: 'input', from: att.id, ev: msg.ev });
+        break;
+    }
   }
 
   async webSocketClose(ws) {
@@ -275,7 +301,8 @@ export class Room extends DurableObject {
 
   send(ws, msg) {
     try {
-      ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
+      const raw = typeof msg === 'string' || msg instanceof ArrayBuffer ? msg : JSON.stringify(msg);
+      ws.send(raw);
     } catch {}
   }
 

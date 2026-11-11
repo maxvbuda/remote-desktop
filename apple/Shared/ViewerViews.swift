@@ -119,7 +119,8 @@ struct ViewerScreen: View {
 
     private var badge: some View {
         let on = session.canControl
-        return Text(on ? "Control on" : "View only")
+        let label = (on ? "Control on" : "View only") + (session.relay != nil ? " · Relayed" : "")
+        return Text(label)
             .font(.caption.weight(.semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)

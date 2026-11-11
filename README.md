@@ -22,9 +22,13 @@ gh variable set RD_SERVER_URL --body "https://remote-desktop.<you>.workers.dev"
 
 and re-run the **Build apps** workflow. Users can also set the address themselves: Settings (⌘,) on Mac, or the gear icon on iOS.
 
-### TURN (recommended)
+### Relay fallback
 
-STUN alone fails on some corporate and mobile networks, so a relay helps. Use either option.
+When two devices can't connect directly (mobile data, strict company networks), the apps switch to relay mode automatically after about 12 seconds. The Mac encodes H.264 at 15 fps and about 2.5 Mbps, sends it through the Worker over the existing WebSocket, and input comes back the same way. It needs no extra setup and fits the Workers free plan for normal use. Quality is lower than a direct connection.
+
+### TURN (optional)
+
+A TURN server gives full-quality video on those networks instead of the relay. Use either option.
 
 **Any TURN provider.** Some, such as Metered or ExpressTURN, have free plans without a card. Paste the ICE servers they give you as a JSON array:
 

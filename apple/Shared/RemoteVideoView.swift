@@ -26,8 +26,25 @@ class RemoteVideoContainer: PlatformView, RTCVideoViewDelegate {
         }
     }
 
-    private var videoSize = CGSize.zero {
-        didSet { layoutVideo() }
+    var videoSize = CGSize.zero {
+        didSet { if videoSize != oldValue { layoutVideo() } }
+    }
+
+    /// Relay-mode video, shown instead of the WebRTC view.
+    var relayLayer: CALayer? {
+        didSet {
+            guard oldValue !== relayLayer else { return }
+            oldValue?.removeFromSuperlayer()
+            if let relayLayer {
+                #if os(macOS)
+                layer?.addSublayer(relayLayer)
+                #else
+                layer.addSublayer(relayLayer)
+                #endif
+            }
+            videoView.isHidden = relayLayer != nil
+            layoutVideo()
+        }
     }
 
     override init(frame: CGRect) {
@@ -69,6 +86,10 @@ class RemoteVideoContainer: PlatformView, RTCVideoViewDelegate {
 
     private func layoutVideo() {
         videoView.frame = videoRect
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        relayLayer?.frame = videoRect
+        CATransaction.commit()
     }
 
     /// `point` is in this view's coordinates (top-left origin on both platforms).
@@ -87,7 +108,15 @@ class RemoteVideoContainer: PlatformView, RTCVideoViewDelegate {
     }
 
     func videoView(_ videoView: RTCVideoRenderer, didChangeVideoSize size: CGSize) {
-        DispatchQueue.main.async { self.videoSize = size }
+        DispatchQueue.main.async { if self.relayLayer == nil { self.videoSize = size } }
+    }
+
+    func apply(_ session: ViewerSession) {
+        track = session.videoTrack
+        relayLayer = session.relay?.layer
+        if session.relay != nil { videoSize = session.relaySize }
+        canControl = session.canControl
+        send = { [weak session] in session?.send($0) }
     }
 }
 
@@ -98,9 +127,7 @@ struct RemoteVideo: NSViewRepresentable {
     func makeNSView(context: Context) -> MacRemoteView { MacRemoteView(frame: .zero) }
 
     func updateNSView(_ view: MacRemoteView, context: Context) {
-        view.track = session.videoTrack
-        view.canControl = session.canControl
-        view.send = { [weak session] in session?.send($0) }
+        view.apply(session)
         if session.canControl, view.window?.firstResponder !== view {
             DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
         }
@@ -114,9 +141,7 @@ struct RemoteVideo: UIViewRepresentable {
     func makeUIView(context: Context) -> TouchRemoteView { TouchRemoteView(frame: .zero) }
 
     func updateUIView(_ view: TouchRemoteView, context: Context) {
-        view.track = session.videoTrack
-        view.canControl = session.canControl
-        view.send = { [weak session] in session?.send($0) }
+        view.apply(session)
         DispatchQueue.main.async {
             if showKeyboard && session.canControl, !view.isFirstResponder { view.becomeFirstResponder() }
             if !showKeyboard, view.isFirstResponder { view.resignFirstResponder() }
